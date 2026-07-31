@@ -1,0 +1,42 @@
+<script>
+document.addEventListener('pointerdown', function (event) {
+
+    var formSubmitButton = event.target.closest(".wpcf7-submit");
+    console.log("Submit Button Found:", formSubmitButton);
+
+    if (!formSubmitButton) return;
+
+    var formBodyEl = formSubmitButton.closest("form");
+    console.log("Form Body Found:", formBodyEl);
+
+    if (!formBodyEl) return;
+
+    var nameEL = formBodyEl.querySelector("input[name='your-name']");
+    var emailEL = formBodyEl.querySelector("input[name='your-email']");
+    var subjectEL = formBodyEl.querySelector("input[name='your-subject']");
+
+    var name = nameEL ? nameEL.value.trim() : "";
+    var email = emailEL ? emailEL.value.trim() : "";
+    var subject = subjectEL ? subjectEL.value.trim() : "";
+
+    console.log("Name:", name);
+    console.log("Email:", email);
+    console.log("Subject:", subject);
+
+    if (name && email && subject) {
+
+        window.dataLayer = window.dataLayer || [];
+        dataLayer.push({
+            event: "custom_form_submit",
+            name: name,
+            email: email,
+            subject: subject
+        });
+
+    } else {
+        console.log("Form fields missing or invalid");
+    }
+
+});
+
+</script>
