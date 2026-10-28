@@ -1,0 +1,183 @@
+<script>
+/*
+  Tag name : Custom JavaScript Code || CF7 Successful Submission (localStorage) || Listener Code - Tag
+  Trigger  : DOM Ready - All Pages
+  Replaces : Custom JavaScript Code || GET A QUOTE! Form Submission || Listener Code - Tag (pause the old one)
+
+  How it works:
+  1. On every page, listen for "wpcf7mailsent". CF7 fires this event ONLY after the
+     form passed validation and the email was sent. Validation errors, spam/quiz
+     failures and mail failures never fire it.
+  2. Save the form data + source page info in localStorage.
+  3. On the NEXT page load (the thank-you page the form redirects to, whatever
+     its URL is), read the saved data, push "cf7_submit" to the dataLayer once,
+     then delete it from localStorage. Every form can have its own thank-you URL.
+  4. Fallback: if a form does NOT redirect to the thank-you page, push the event
+     on the same page after a few seconds, so no form is missed.
+*/
+(function () {
+  var STORAGE_KEY = 'mf_cf7_lead';
+  var MAX_AGE_MS = 10 * 60 * 1000;      // saved data is valid for 10 minutes
+  var NO_REDIRECT_DELAY_MS = 5000;       // wait time before the fallback push
+  var isLeavingPage = false;
+  var currentUrl = window.location.href;
+  var storedLead;
+  var now;
+
+  window.dataLayer = window.dataLayer || [];
+
+  /* ---------- read saved lead from localStorage ---------- */
+  function readStoredLead() {
+    var raw = null;
+    var lead = null;
+
+    try {
+      raw = window.localStorage.getItem(STORAGE_KEY);
+    } catch (e) {
+      raw = null;
+    }
+
+    if (raw) {
+      try {
+        lead = JSON.parse(raw);
+      } catch (e) {
+        lead = null;
+      }
+    }
+
+    return lead;
+  }
+
+  /* ---------- delete saved lead from localStorage ---------- */
+  function removeStoredLead() {
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {
+      // localStorage not available, nothing to remove
+    }
+  }
+
+  /* ---------- push the lead to the dataLayer ---------- */
+  function pushLead(lead) {
+    window.dataLayer.push({
+      event: 'cf7_submit',
+      formId: lead.formId,
+      pageId: lead.pageId,
+      formPagePath: lead.formPagePath,
+      formPageUrl: lead.formPageUrl,
+      formPageTitle: lead.formPageTitle,
+      thankYouPagePath: window.location.pathname,
+      leadEventId: lead.leadEventId,
+      inputs: lead.inputs
+    });
+  }
+
+  /* ---------- PART 1: page after redirect, push saved lead once ---------- */
+  storedLead = readStoredLead();
+
+  if (storedLead) {
+    now = new Date().getTime();
+
+    if (now - storedLead.savedAt > MAX_AGE_MS) {
+      // too old, do not count it
+      removeStoredLead();
+    } else {
+      // skip only if this is the same form page reloading (no redirect happened yet)
+      if (currentUrl.split('#')[0] !== storedLead.formPageUrl.split('#')[0]) {
+        removeStoredLead();   // remove first, so a page refresh can not push it again
+        pushLead(storedLead);
+      }
+    }
+  }
+
+  /* ---------- PART 2: listen for successful CF7 submissions ---------- */
+  window.addEventListener('pagehide', function () {
+    isLeavingPage = true;
+  });
+
+  window.addEventListener('beforeunload', function () {
+    isLeavingPage = true;
+  });
+
+  document.addEventListener('wpcf7mailsent', function (event) {
+    var detail = event.detail;
+    var rawInputs = [];
+    var inputs = {};
+    var lead;
+    var leadEventId;
+    var i;
+    var name;
+    var value;
+
+    if (detail && detail.inputs) {
+      rawInputs = detail.inputs;
+    }
+
+    for (i = 0; i < rawInputs.length; i++) {
+      name = rawInputs[i].name;
+      value = rawInputs[i].value;
+
+      if (!name) {
+        continue;
+      }
+
+      // skip CF7 hidden/system fields (they start with "_")
+      if (name.charAt(0) === '_') {
+        continue;
+      }
+
+      // "services[]" becomes "services"
+      if (name.slice(-2) === '[]') {
+        name = name.slice(0, -2);
+      }
+
+      // checkboxes can send the same name more than once, join the values
+      if (inputs.hasOwnProperty(name)) {
+        inputs[name] = inputs[name] + ', ' + value;
+      } else {
+        inputs[name] = value;
+      }
+    }
+
+    leadEventId = 'lead_' + new Date().getTime() + '_' + Math.random().toString(36).substr(2, 9);
+
+    lead = {
+      formId: detail ? detail.contactFormId : '',
+      pageId: detail ? detail.containerPostId : '',
+      formPagePath: window.location.pathname,
+      formPageUrl: window.location.href,
+      formPageTitle: document.title,
+      leadEventId: leadEventId,
+      inputs: inputs,
+      savedAt: new Date().getTime()
+    };
+
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(lead));
+    } catch (e) {
+      // localStorage blocked (private mode etc.), push right away instead
+      pushLead(lead);
+      return;
+    }
+
+    /* ---------- fallback: form did not redirect ---------- */
+    setTimeout(function () {
+      var stillStored;
+
+      if (isLeavingPage) {
+        return;   // page is redirecting, the thank-you page will push it
+      }
+
+      stillStored = readStoredLead();
+
+      if (stillStored) {
+        if (stillStored.leadEventId === leadEventId) {
+          removeStoredLead();
+          pushLead(stillStored);
+        }
+      }
+    }, NO_REDIRECT_DELAY_MS);
+
+  }, false);
+})();
+</script>
